@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+vendor/
+
+# 构建产物
+dist/
+build/
+target/
+out/
+*.class
+*.jar
+
+# 环境变量与密钥
+.env
+.env.*
+*.local
+
+# 日志
+*.log
+logs/
+
+# 数据库 / 本地数据
+*.sqlite
+*.db
+
+# 操作系统 / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 其他
+*.tmp
+
+# 运行时生成的分析结果
+output/
+output_*/
+test_output/
