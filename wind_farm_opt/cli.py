@@ -395,6 +395,28 @@ class WindFarmOptimizerCLI:
                 show=show,
             )
 
+    def _result_to_json(self, result: FarmResult) -> dict:
+        """将 FarmResult 序列化为可核对的完整层级字典。
+
+        保留旧版 GWh 汇总字段，同时补充 MWh 单位的汇总、逐机、
+        扇区与来源归因数据（均来自同一个 FarmResult）。
+        """
+        data = result.to_dict()
+        data["gross_aep_gwh"] = float(result.gross_aep / 1e3)
+        data["net_aep_gwh"] = float(result.net_aep / 1e3)
+        data["wake_loss_gwh"] = float(result.total_wake_loss / 1e3)
+        data["capacity_factor"] = float(result.capacity_factor)
+        # 向后兼容：仅含损失百分比与主要来源的精简逐机列表
+        data["turbine_losses"] = [
+            {
+                "idx": tr.turbine_idx,
+                "wake_loss_pct": float(tr.wake_loss_pct),
+                "dominant_source": tr.dominant_wake_source,
+            }
+            for tr in result.turbine_results
+        ]
+        return data
+
     def save_results(self) -> None:
         """保存所有结果到JSON文件。"""
         self._print_header("步骤 6/6: 保存结果数据")
@@ -415,38 +437,20 @@ class WindFarmOptimizerCLI:
         }
 
         if self.baseline_result is not None:
-            results["baseline"] = {
-                "positions": self.baseline_positions.tolist() if self.baseline_positions is not None else None,
-                "gross_aep_gwh": float(self.baseline_result.gross_aep / 1e3),
-                "net_aep_gwh": float(self.baseline_result.net_aep / 1e3),
-                "wake_loss_pct": float(self.baseline_result.wake_loss_pct),
-                "capacity_factor": float(self.baseline_result.capacity_factor),
-                "turbine_losses": [
-                    {
-                        "idx": tr.turbine_idx,
-                        "wake_loss_pct": float(tr.wake_loss_pct),
-                        "dominant_source": tr.dominant_wake_source,
-                    }
-                    for tr in self.baseline_result.turbine_results
-                ],
-            }
+            results["baseline"] = self._result_to_json(self.baseline_result)
+            results["baseline"]["positions"] = (
+                self.baseline_positions.tolist()
+                if self.baseline_positions is not None
+                else None
+            )
 
         if self.optimized_result is not None:
-            results["optimized"] = {
-                "positions": self.optimized_positions.tolist() if self.optimized_positions is not None else None,
-                "gross_aep_gwh": float(self.optimized_result.gross_aep / 1e3),
-                "net_aep_gwh": float(self.optimized_result.net_aep / 1e3),
-                "wake_loss_pct": float(self.optimized_result.wake_loss_pct),
-                "capacity_factor": float(self.optimized_result.capacity_factor),
-                "turbine_losses": [
-                    {
-                        "idx": tr.turbine_idx,
-                        "wake_loss_pct": float(tr.wake_loss_pct),
-                        "dominant_source": tr.dominant_wake_source,
-                    }
-                    for tr in self.optimized_result.turbine_results
-                ],
-            }
+            results["optimized"] = self._result_to_json(self.optimized_result)
+            results["optimized"]["positions"] = (
+                self.optimized_positions.tolist()
+                if self.optimized_positions is not None
+                else None
+            )
 
         if self.economic_result is not None:
             results["economic"] = {

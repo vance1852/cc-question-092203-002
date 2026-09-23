@@ -101,7 +101,9 @@ class JensenWake(WakeModel):
 
         with np.errstate(divide="ignore", invalid="ignore"):
             ratio = d0 / (d0 + 2.0 * self.wake_decay * dist)
-            deficit = 1.0 - np.sqrt(1.0 - thrust_coefficient) * ratio ** 2
+            # Jensen/PARK 顶帽模型：亏损随下游距离衰减，
+            # deficit = (1 - sqrt(1 - Ct)) * (D0 / (D0 + 2 k x))^2
+            deficit = (1.0 - np.sqrt(1.0 - thrust_coefficient)) * ratio ** 2
 
         deficit = np.where(dist <= 0, 0.0, deficit)
         deficit = np.clip(deficit, 0.0, 1.0)
