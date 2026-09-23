@@ -91,10 +91,11 @@ class WindFarmOptimizerCLI:
         print(f"  容量系数:    {result.capacity_factor:.2f}%")
         print(f"  风机台数:    {len(result.turbine_results)}")
 
-        max_loss_turb = max(result.turbine_results, key=lambda x: x.wake_loss_pct)
-        print(f"  最大损失风机: #{max_loss_turb.turbine_idx} ({max_loss_turb.wake_loss_pct:.2f}%)")
-        if max_loss_turb.dominant_wake_source is not None:
-            print(f"    主要影响源: #{max_loss_turb.dominant_wake_source}")
+        if result.turbine_results:
+            max_loss_turb = max(result.turbine_results, key=lambda x: x.wake_loss_pct)
+            print(f"  最大损失风机: #{max_loss_turb.turbine_idx} ({max_loss_turb.wake_loss_pct:.2f}%)")
+            if max_loss_turb.dominant_wake_source is not None:
+                print(f"    主要影响源: #{max_loss_turb.dominant_wake_source}")
 
     def run_baseline(self) -> None:
         """运行基线（规则网格布局）评估。"""
@@ -275,7 +276,7 @@ class WindFarmOptimizerCLI:
                     rng=rng,
                 )
 
-                result = self.aep_calc.compute_farm_aep(positions)
+                result = self.aep_calc.compute_farm_aep(positions, return_details=False)
 
                 rated_power_MW = self.turbines[0].rated_power / 1e3
                 econ_result = analyzer.analyze(
@@ -395,6 +396,49 @@ class WindFarmOptimizerCLI:
                 show=show,
             )
 
+    @staticmethod
+    def _serialize_farm_result(result: FarmResult, positions: Optional[np.ndarray]) -> dict:
+        """将 FarmResult 序列化为可核对的字典。
+
+        汇总值（GWh）、逐机值（MWh）、扇区值（MWh）和逐来源归因
+        全部写入，便于相互核对某台风机净发电量的构成。
+        """
+        return {
+            "positions": positions.tolist() if positions is not None else None,
+            "gross_aep_gwh": float(result.gross_aep / 1e3),
+            "net_aep_gwh": float(result.net_aep / 1e3),
+            "wake_loss_pct": float(result.wake_loss_pct),
+            "capacity_factor": float(result.capacity_factor),
+            "turbine_losses": [
+                {
+                    "idx": tr.turbine_idx,
+                    "name": tr.name,
+                    "gross_aep_mwh": float(tr.gross_aep),
+                    "net_aep_mwh": float(tr.net_aep),
+                    "wake_loss_mwh": float(tr.wake_loss),
+                    "wake_loss_pct": float(tr.wake_loss_pct),
+                    "avg_effective_speed": float(tr.avg_effective_speed),
+                    "dominant_source": tr.dominant_wake_source,
+                    "loss_by_source_mwh": {
+                        str(src): float(loss)
+                        for src, loss in tr.total_power_loss_by_source.items()
+                    },
+                }
+                for tr in result.turbine_results
+            ],
+            "sectors": [
+                {
+                    "sector_idx": s_idx,
+                    "direction": float(s["direction"]),
+                    "frequency": float(s["frequency"]),
+                    "gross_aep_mwh": float(s["gross_aep"]),
+                    "net_aep_mwh": float(s["net_aep"]),
+                    "wake_loss_mwh": float(s["wake_loss"]),
+                }
+                for s_idx, s in result.sector_results.items()
+            ],
+        }
+
     def save_results(self) -> None:
         """保存所有结果到JSON文件。"""
         self._print_header("步骤 6/6: 保存结果数据")
@@ -415,38 +459,16 @@ class WindFarmOptimizerCLI:
         }
 
         if self.baseline_result is not None:
-            results["baseline"] = {
-                "positions": self.baseline_positions.tolist() if self.baseline_positions is not None else None,
-                "gross_aep_gwh": float(self.baseline_result.gross_aep / 1e3),
-                "net_aep_gwh": float(self.baseline_result.net_aep / 1e3),
-                "wake_loss_pct": float(self.baseline_result.wake_loss_pct),
-                "capacity_factor": float(self.baseline_result.capacity_factor),
-                "turbine_losses": [
-                    {
-                        "idx": tr.turbine_idx,
-                        "wake_loss_pct": float(tr.wake_loss_pct),
-                        "dominant_source": tr.dominant_wake_source,
-                    }
-                    for tr in self.baseline_result.turbine_results
-                ],
-            }
+            results["baseline"] = self._serialize_farm_result(
+                self.baseline_result,
+                self.baseline_positions,
+            )
 
         if self.optimized_result is not None:
-            results["optimized"] = {
-                "positions": self.optimized_positions.tolist() if self.optimized_positions is not None else None,
-                "gross_aep_gwh": float(self.optimized_result.gross_aep / 1e3),
-                "net_aep_gwh": float(self.optimized_result.net_aep / 1e3),
-                "wake_loss_pct": float(self.optimized_result.wake_loss_pct),
-                "capacity_factor": float(self.optimized_result.capacity_factor),
-                "turbine_losses": [
-                    {
-                        "idx": tr.turbine_idx,
-                        "wake_loss_pct": float(tr.wake_loss_pct),
-                        "dominant_source": tr.dominant_wake_source,
-                    }
-                    for tr in self.optimized_result.turbine_results
-                ],
-            }
+            results["optimized"] = self._serialize_farm_result(
+                self.optimized_result,
+                self.optimized_positions,
+            )
 
         if self.economic_result is not None:
             results["economic"] = {
